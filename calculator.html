@@ -122,6 +122,18 @@ body{background:#f5f2eb;font-family:Arial,sans-serif}
     </div>
   </div>
 </div>
+<div class="overlay" id="recOverlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span>💡 До бесплатной доставки</span>
+      <button id="btnCloseRec">×</button>
+    </div>
+    <div class="modal-body" id="recBody" style="padding:16px 20px;display:flex;flex-direction:column;gap:10px"></div>
+    <div class="modal-foot">
+      <button class="btn-close-modal" id="btnCloseRec2" style="width:100%">Закрыть</button>
+    </div>
+  </div>
+</div>
 
 <script>
 var CORDIALS=[["Абрикос",590],["Грейпфрут",590],["Клубника",590],["Лайм",490],["Личи",690],["Малина",590],["Манго",590],["Облепиха",590],["Фиалка",590],["Черешня",590],["Черная смородина",590],["Абрикос / Айва",690],["Арбуз / Мелисса / Биттер NEW",690],["Гуава / Земляника",690],["Гуава / Жасмин",690],["Гранат / Черемуха",690],["Дуб / Инжир / Брусника",690],["Ежевика / Грейпфрут / Ревень NEW",690],["Желтая слива / Алыча",690],["Малина / Фиалка",690],["Слива / Сакура",690],["Черника / Манго",690],["Юдзу / Ромашка",990],["Ягоды черной бузины",690],["Яблоко / Табак",690],["Зелёный виноград / Яблоко NEW",690]];
@@ -358,6 +370,56 @@ function formOrder(){
 }
 
 function closeModal(){document.getElementById("overlay").classList.remove("show");}
+function closeRec(){document.getElementById("recOverlay").classList.remove("show");}
+
+function showRecommendations(){
+  var filled=rows.filter(function(r){return r.product&&PRICE_MAP[r.product];});
+  var total=filled.reduce(function(s,r){return s+discounted(PRICE_MAP[r.product].price)*r.qty;},0);
+  var diff=4000-total;
+  var body=document.getElementById("recBody");
+  body.innerHTML="";
+  if(diff<=0){
+    body.innerHTML="<div style='font-size:14px;color:#555'>У вас уже бесплатная доставка 🎉</div>";
+  } else {
+    var intro=document.createElement("div");
+    intro.style.fontSize="13px";
+    intro.style.color="#555";
+    intro.textContent="Добавьте товаров минимум на "+fmt(diff)+", чтобы получить бесплатную доставку:";
+    body.appendChild(intro);
+    var allProducts=Object.keys(PRICE_MAP).map(function(name){return {name:name, price:discounted(PRICE_MAP[name].price)};});
+    var candidates=allProducts.filter(function(p){return p.price>=diff;}).sort(function(a,b){return a.price-b.price;});
+    var suggestions=candidates.slice(0,5);
+    if(!suggestions.length){
+      suggestions=allProducts.sort(function(a,b){return b.price-a.price;}).slice(0,5);
+    }
+    suggestions.forEach(function(p){
+      var row=document.createElement("div");
+      row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #e8e0d0;border-radius:8px;padding:10px 12px";
+      var label=document.createElement("div");
+      label.style.fontSize="13px";
+      label.style.color="#1a1a1a";
+      label.textContent=p.name.replace(/^.*?— /,"")+" — "+fmt(p.price);
+      var btn=document.createElement("button");
+      btn.textContent="+ Добавить";
+      btn.style.cssText="background:#8b6914;color:#fff;border:none;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;white-space:nowrap;-webkit-appearance:none";
+      btn.addEventListener("click",function(){
+        var existing=rows.filter(function(r){return r.product===p.name;})[0];
+        if(existing){
+          existing.qty+=1;
+        } else {
+          var empty=rows.filter(function(r){return !r.product;})[0];
+          if(empty){ empty.product=p.name; } else { rows.push({id:"r"+(++uid),product:p.name,qty:1}); }
+        }
+        renderAll();
+        closeRec();
+      });
+      row.appendChild(label);
+      row.appendChild(btn);
+      body.appendChild(row);
+    });
+  }
+  document.getElementById("recOverlay").classList.add("show");
+}
 
 function copyText(){
   var ta=document.getElementById("orderText");
@@ -373,104 +435,21 @@ function fb(ta,done){
 }
 
 // Wire up buttons after DOM ready
-document.getElementById("btnAdd").addEventListener("click",addRow);
-
-function showRecommendations(){
-  var filled=rows.filter(function(r){return r.product&&PRICE_MAP[r.product];});
-  var total=filled.reduce(function(s,r){return s+discounted(PRICE_MAP[r.product].price)*r.qty;},0);
-  var need=4000-total;
-  if(need<=0) return;
-  var body=document.getElementById("recBody");
-  body.innerHTML="";
-
-  // Header
-  var hd=document.createElement("div");
-  hd.style.cssText="font-size:13px;color:#888;padding-bottom:4px;border-bottom:1px solid #e8e0d0";
-  hd.textContent="Не хватает "+need.toLocaleString("ru-RU")+" ₽. Вот как добрать:";
-  body.appendChild(hd);
-
-  // Build suggestions: for each ordered item, how many extra units needed
-  var suggestions=[];
-  filled.forEach(function(r){
-    var p=PRICE_MAP[r.product];
-    var dp=discounted(p.price);
-    if(dp<=0) return;
-    var extraUnits=Math.ceil(need/dp);
-    var gained=dp*extraUnits;
-    var name=r.product.replace(/^.*?— /,"");
-    suggestions.push({name:name,cat:p.cat,dp:dp,extraUnits:extraUnits,gained:gained,rowId:r.id,currentQty:r.qty});
-  });
-
-  // Sort by least extra units needed
-  suggestions.sort(function(a,b){return a.extraUnits-b.extraUnits;});
-
-  if(!suggestions.length){
-    var empty=document.createElement("div");
-    empty.style.cssText="font-size:13px;color:#888;text-align:center;padding:12px 0";
-    empty.textContent="Добавьте товары в заявку";
-    body.appendChild(empty);
-    return;
-  }
-
-  suggestions.slice(0,5).forEach(function(s){
-    var row=document.createElement("div");
-    row.style.cssText="background:#f7f4ef;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px";
-
-    var info=document.createElement("div");
-    info.innerHTML="<div style='font-size:13px;font-weight:600;color:#1a1a1a'>"+s.name+"</div>"
-      +"<div style='font-size:11px;color:#8b6914;margin-top:2px'>"+s.cat+" · +"+s.extraUnits+" шт · +"+(s.gained).toLocaleString("ru-RU")+" ₽</div>";
-
-    var btn=document.createElement("button");
-    btn.textContent="+"+s.extraUnits+" шт";
-    btn.style.cssText="background:#1a1a1a;color:#c9b47a;border:none;border-radius:6px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0";
-    (function(s){
-      btn.addEventListener("click",function(){
-        var r=rows.find(function(x){return x.id===s.rowId;});
-        if(r){
-          r.qty=Math.min(100,r.qty+s.extraUnits);
-          var qsel=document.getElementById("qty_"+r.id);
-          if(qsel) qsel.value=r.qty;
-          updateRowUI(r);
-          updateSummary();
-          document.getElementById("recOverlay").classList.remove("show");
-        }
-      });
-    })(s);
-
-    row.appendChild(info);
-    row.appendChild(btn);
-    body.appendChild(row);
-  });
-  document.getElementById("recOverlay").classList.add("show");
-}
-
-document.getElementById("btnRec").addEventListener("click",showRecommendations);
-document.getElementById("btnCloseRec").addEventListener("click",function(){document.getElementById("recOverlay").classList.remove("show");});
-document.getElementById("btnCloseRec2").addEventListener("click",function(){document.getElementById("recOverlay").classList.remove("show");});
-document.getElementById("recOverlay").addEventListener("click",function(e){if(e.target===this)this.classList.remove("show");});
-document.getElementById("discount").addEventListener("input",function(){rows.forEach(function(r){updateRowUI(r);});updateSummary();});
-document.getElementById("markup").addEventListener("input",function(){rows.forEach(function(r){updateRowUI(r);});updateSummary();});
-document.getElementById("markup").addEventListener("input",function(){rows.forEach(function(r){updateRowUI(r);});updateSummary();});
-document.getElementById("btnClear").addEventListener("click",clearAll);
-document.getElementById("btnOrder").addEventListener("click",formOrder);
-document.getElementById("btnCopy").addEventListener("click",copyText);
-document.getElementById("btnCloseModal").addEventListener("click",closeModal);
-document.getElementById("btnCloseModal2").addEventListener("click",closeModal);
-document.getElementById("overlay").addEventListener("click",function(e){if(e.target===this)closeModal();});
+document.getElementById("btnAdd").addEventListener("click", addRow);
+document.getElementById("btnClear").addEventListener("click", clearAll);
+document.getElementById("btnOrder").addEventListener("click", formOrder);
+document.getElementById("btnCopy").addEventListener("click", copyText);
+document.getElementById("btnCloseModal").addEventListener("click", closeModal);
+document.getElementById("btnCloseModal2").addEventListener("click", closeModal);
+document.getElementById("overlay").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
+document.getElementById("btnRec").addEventListener("click", showRecommendations);
+document.getElementById("btnCloseRec").addEventListener("click", closeRec);
+document.getElementById("btnCloseRec2").addEventListener("click", closeRec);
+document.getElementById("recOverlay").addEventListener("click", function(e){ if(e.target===this) closeRec(); });
+document.getElementById("discount").addEventListener("input", function(){ rows.forEach(function(r){ updateRowUI(r); }); updateSummary(); });
+document.getElementById("markup").addEventListener("input", function(){ rows.forEach(function(r){ updateRowUI(r); }); updateSummary(); });
 
 clearAll();
 </script>
-<div class="overlay" id="recOverlay">
-  <div class="modal">
-    <div class="modal-hdr">
-      <span>💡 До бесплатной доставки</span>
-      <button id="btnCloseRec">×</button>
-    </div>
-    <div class="modal-body" id="recBody" style="padding:16px 20px;display:flex;flex-direction:column;gap:10px"></div>
-    <div class="modal-foot">
-      <button class="btn-close-modal" id="btnCloseRec2" style="width:100%">Закрыть</button>
-    </div>
-  </div>
-</div>
 </body>
 </html>
